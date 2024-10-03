@@ -20,9 +20,6 @@ LStart=1000
 eps=1e-14
 Max_It=100
 
-##### Mostrar plot das regressões (debug, trava o calculo a cada plot. Alternativamente usar plt.draw(), mas pode crashar o PC por excesso de figuras)
-##draw=False
-
 ##### Extrair Vth por Extrapolação Linear
 VthLinex=True
 
@@ -30,7 +27,7 @@ VthLinex=True
 FitOrder=4
 
 ##### String de formatação da saída. Padrão = '+5.4e' (com sinal, 5 digitos totais, 4 digitos após o ponto, notação científica)
-FStr='5.4e'
+FStr='+5.4e'
 
 ##### Definições de Modelos
 
@@ -145,7 +142,7 @@ def YFuncExtraction(pathlist, W, L, t_ox, e_ox, Vd, VgName='Vg', IdName='Id', Sa
             e=(beta*Vd*p[2])/2
             
             Vt+=[Vt[-1]+e]
-            if e < eps:
+            if np.abs(e) < eps:
                 break
         ##    print(Vt[-1])
         if SaveIntermediary:

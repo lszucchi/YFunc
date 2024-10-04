@@ -39,7 +39,7 @@ def Xi_Model(p, VGt):
 
 def Xi_Model2(p, VGt, Vd):
     beta, eps, t2 = p
-    return (1/(beta*Vd))*((1/(VGt+eps)**2)-t2) 
+    return (1/(beta*Vd))*((1/(VGt+eps)**2)-t2)
 
 def Xi_ObjFun(p, VGt, Xi):
     return Xi_Model(p, VGt)-Xi
@@ -54,7 +54,7 @@ def Id_Model(Vg, Vth, Vd, beta, theta1, theta2):
 def Id_ObjFun(p, VGt, Id, Vd, beta):
     return Id_Model(p, VGt, Vd, beta)-Id
 
-def YFuncExtraction(pathlist, W, L, t_ox, e_ox, Vd, VgName='Vg', IdName='Id', SaveIntermediary=False, SaveFinal=True, Interpolate=False):
+def YFuncExtraction(pathlist, W, L, t_ox, e_ox, Vd, nfins=1, VgName='Vg', IdName='Id', SaveIntermediary=False, SaveFinal=True, Interpolate=False):
     pathlist=[path.replace('\\', '/') for path in pathlist]
     logpath=f"{pathlist[0].rsplit('/', 1)[0]}/"
     COX=(e_ox*epsilon_0)/(t_ox*1e-9)
@@ -91,6 +91,8 @@ def YFuncExtraction(pathlist, W, L, t_ox, e_ox, Vd, VgName='Vg', IdName='Id', Sa
             Vg=-Vg
             Vd=-Vd
 
+        Id=Id/nfins
+        
         #Smooth gm e tomando índice de máximo gm
         model = SuperSmoother()
         model.fit(Vg[1:], gm)

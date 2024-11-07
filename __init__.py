@@ -19,7 +19,7 @@ def Id_Model(Vg, Vth, Vd, beta, theta1, theta2):
     VGt=Vg-Vth-Vd/2
     return (beta*Vd*VGt)/(1+theta1*VGt+theta2*(VGt**2))
 
-def YFuncExtraction(path, WL, t_ox, e_ox, Vd=25e-3, nfins=1, VgName='Vg', IdName='Id', ind=0, PlotIdxVgs=True, SaveIntermediary=False, SaveFinal=True, Interpolate=True):
+def YFuncExtraction(path, WL, t_ox, e_ox, Vd=25e-3, nfins=1, VgName='Vg', IdName='Id', PlotIdxVgs=True, SaveIntermediary=False, SaveFinal=True, Interpolate=True):
     path=path.replace('\\', '/')
     logpath, filename=path.rsplit('/', 1)
 
@@ -96,7 +96,7 @@ def YFuncExtraction(path, WL, t_ox, e_ox, Vd=25e-3, nfins=1, VgName='Vg', IdName
         fig.savefig(f"{logpath}/{filename.replace('csv', 'png')}")
 
     ##### Cálculo Subthreshold Slope, menor SS discreto. Tratamento pra impedir warning quando Id <= 0 
-    VglogId=np.diff(Vg)/np.diff([np.log10(val) if val >0 else np.nan for val in Id])
+    VglogId=np.diff(Vg)/np.diff([np.log10(val) if val > 0 else np.nan for val in Id])
     SS=1e3*np.min(VglogId[VglogId > 0])
         
     ##### Pegando parametros somente para região de inversão (Vg > Vg[maxgm])
@@ -193,10 +193,6 @@ def YFuncExtraction(path, WL, t_ox, e_ox, Vd=25e-3, nfins=1, VgName='Vg', IdName
     Id_Final=(beta*Vd*(Vg[Vg > Vth]-Vth-Vd/2))/(1+Theta1*(Vg[Vg > Vth]-Vth-Vd/2)+Theta2*(Vg[Vg > Vth]-Vth-Vd/2)**2)
     maxarg=len(Id)-maxgm
     errmax=np.max(np.abs((Id_Final[-maxarg:]-Id[-maxarg:])/Id[-maxarg:]))*100
-    if False:
-        plt.plot(range(0, maxarg), Id_Final[-maxarg:])
-        plt.plot(range(0, maxarg), Id[-maxarg:])
-        plt.show()
 
     if SaveFinal:
         fig, ax=plt.subplots()
@@ -211,11 +207,3 @@ def YFuncExtraction(path, WL, t_ox, e_ox, Vd=25e-3, nfins=1, VgName='Vg', IdName
     plt.close('all')
 
     return LIN, Vth, SS, migm, miyf, theta1, theta2, errmax
-
-def WriteLog(root, name, now, LIN, Vth, SS, migm, miyf, theta1, theta2, errmax, display=False):
-##### String de formatação da saída. Padrão = '.5e' (5 digitos após o ponto, notação científica)
-    FStr='.3e'
-    if isinstance(name, float): name=format(name, '7.3f')
-    with open(f"{root}/parameters {now}.log", 'a') as myfile:
-        if display: print(f"{format(LIN, FStr)},{format(Vth, FStr)},{format(SS, '3.1f')},{format(migm, FStr)},{format(miyf, FStr)},{format(theta1, FStr)},{format(theta2, FStr)},{format(errmax, FStr)}")
-        myfile.write(f"{name},{format(LIN, '1.3f')},{format(Vth, '1.3f')},{format(SS, '5.1f')},{format(migm, FStr)},{format(miyf, FStr)},{format(theta1, '+'+FStr)},{format(theta2, '+'+FStr)},{format(errmax, FStr)}\n")

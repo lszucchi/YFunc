@@ -95,9 +95,17 @@ def YFuncExtraction(path, WL, t_ox, e_ox, Vd=25e-3, nfins=1, VgName='Vg', IdName
 
         fig.savefig(f"{logpath}/{filename.replace('csv', 'png')}")
 
-    ##### Cálculo Subthreshold Slope, menor SS discreto. Tratamento pra impedir warning quando Id <= 0 
-    VglogId=np.diff(Vg)/np.diff([np.log10(val) if val > 0 else np.nan for val in Id])
-    SS=1e3*np.min(VglogId[VglogId > 0])
+    ##### Cálculo Subthreshold Slope
+    for idx, val in enumerate(Id):
+                if np.average(Id[idx:idx+2]) >= 5e-10:
+                    j=idx
+                    break
+                    
+    Vfit=Vg[j+1:j+4]
+    Ifit=Id[j+1:j+4]
+
+    SS, _ = np.polyfit(np.log10(Ifit), Vfit, 1)
+    SS=SS*1e3
         
     ##### Pegando parametros somente para região de inversão (Vg > Vg[maxgm])
     Id_inv=Id[maxgm:]
@@ -186,8 +194,8 @@ def YFuncExtraction(path, WL, t_ox, e_ox, Vd=25e-3, nfins=1, VgName='Vg', IdName
 
     ##### Cálculo mobilidade por Y-Funcion e maxgm
     COX=(e_ox*epsilon_0)/(t_ox*1e-9)
-    miyf=beta*(L/W)/COX*1e4
-    migm=gmmax*(L/W)/(Vd*COX)*1e4
+    miyf=beta*(L/W)/COX
+    migm=gmmax*(L/W)/(Vd*COX)
 
     ##### Sobreposição Fitting Final
     Id_Final=(beta*Vd*(Vg[Vg > Vth]-Vth-Vd/2))/(1+Theta1*(Vg[Vg > Vth]-Vth-Vd/2)+Theta2*(Vg[Vg > Vth]-Vth-Vd/2)**2)

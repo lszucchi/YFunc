@@ -32,11 +32,10 @@ for file in listdir(path):
         except:
             temp=float(file.rsplit(' K')[0])
         temp=float(temp)
-        prefix='TP2'
 
         if 't' in prefix.lower():
 ##            try:
-                LIN, Vth, SS, migm, miyf, theta1, theta2, errmax=YFuncExtraction(f"{path}/{file}",UMC[int(prefix[2:])], 4.2, 3.9, 5, 1, 'Vg', 'Id')
+                LIN, Vth, SS, migm, miyf, theta1, theta2, errmax=YFuncExtraction(f"{path}/{file}",UMC[int(prefix[2:])], 4.2, 3.9, Vd=25e-3, nfins=1, VgName='VG', IdName='ID')
                 with open(f"{path}/parameters {now}.log", 'a') as myfile:
                     myfile.write(f"{format(temp, '7.3f')},{format(LIN, '1.3f')},{format(Vth, '1.3f')},{format(SS,'6.2f')},{format(migm, '.4e')},{format(miyf, '.4e')},{format(theta1, '+.3e')},{format(theta2, '+.3e')},{format(errmax, '.3e')}\n")
 ##            except: continue

@@ -204,6 +204,49 @@ def YFuncExtraction(path, WL, t_ox, e_ox, Vd=25e-3, nfins=1, VgName='Vg', IdName
         ax.legend()
         fig.savefig(f"{logpath}/{filename.replace('.csv', 'IdFit.png')}")
 
+    ##### Cálculo Rs
+    gm=np.append(gm[0], gm)
+    gm=np.abs(gm)
+    Rt=Vd/Id
+    Y=Yfunc(Id, gm)
+    n=np.where(Rt*Y/np.min(Rt*Y)<3)
+
+    Xfit=Y[np.argmin(Rt*Y):]
+
+    Yfit=Rt[np.argmin(Rt*Y):]*Xfit
+
+    p1=np.polyfit(Xfit, Yfit, 1)
+    Rext1=p1[0]
+
+
+    if True:
+        fig, ax=plt.subplots()
+        
+        ax.plot(Y[n], Rt[n]*Y[n], '.')
+        ax.plot(Xfit, np.polyval(p1, Xfit), '--')
+        ax.set_xlabel("Yf")
+        ax.set_ylabel("Rd.Yf")
+        
+        fig.savefig(f"{logpath}/{filename.replace('.csv', 'RtYf x Yf.png')}")
+
+    n=np.argmax(gm)
+    Xfit=1/Y[n:]
+    Yfit=Rt[n:]
+
+    p2=np.polyfit(Xfit, Yfit, 1)
+    Rext2=p2[1]
+
+    if True:
+        fig, ax=plt.subplots()
+        
+        ax.plot(1/Y[n-5:], Rt[n-5:], '.')
+        ax.plot(Xfit, np.polyval(p2, Xfit), '--')
+        ax.set_xlabel("Inv Yf")
+        ax.set_ylabel("Rd")
+        
+        fig.savefig(f"{logpath}/{filename.replace('.csv', 'Rt x InvYf.png')}")
+
+
     plt.close('all')
 
-    return LIN, Vth, SS, migm, miyf, theta1, theta2, errmax
+    return LIN, Vth, SS, migm, miyf, theta1, theta2, Rext1, Rext2, errmax

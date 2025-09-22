@@ -66,10 +66,10 @@ def YFuncExtraction(path, temp, WL, t_ox, e_ox, Vd=None, nfins=1, VgName='Vg', I
     ##### Id x Vgs tradicional
 
     try:
-        VGfit=Vg[maxgm-2:maxgm+2]
-        IDfit=Id[maxgm-2:maxgm+2]
+        Vgfit=Vg[maxgm-2:maxgm+2]
+        Idfit=Id[maxgm-2:maxgm+2]
         
-        m, b= np.polyfit(VGfit, IDfit, 1)
+        m, b= np.polyfit(Vgfit, Idfit, 1)
         LIN=-b/m+Vd/2
     except:
         LIN=0
@@ -262,3 +262,176 @@ def YFuncExtraction(path, temp, WL, t_ox, e_ox, Vd=None, nfins=1, VgName='Vg', I
     plt.close('all')
 
     return LIN, Vth, SS1, SS2, migm, miyf, theta1, theta2, Rext1, Rext2, beta, errmax
+
+def DiodeExtraction(path, temp, VfName="Vf", IfName="If"):
+    try:
+        df=pd.read_csv(path, header=[0, 1])
+        
+        If=df[IfName][df[IfName].columns[0]].to_numpy()
+        Vf=df[VfName][df[VfName].columns[0]].to_numpy()
+    except:
+        df=pd.read_csv(path)
+        
+        If=df[IfName].to_numpy()
+        Vf=df[VfName].to_numpy()
+
+    log_if=np.log10(np.clip(If, 1e-10, 1))
+    np.diff(log_if)/np.diff(Vf)
+    
+    fig, ax=plt.subplots()
+
+    ax.plot(Vf, If)
+
+    ax.set_title("If x Vf")
+    
+    ax.set_ylabel("$I_f$ (A)")
+    ax.set_xlabel("$V_f$ (V)")
+
+    plt.savefig(path.replace(".csv", ".png"))
+
+    ax.set_yscale('log')
+
+    fig.savefig(path.replace(".csv", " log.png"))
+
+    fig2, ax2=plt.subplots()
+
+    ax2.plot(Vf[1:], gm)
+
+    ax2.set_title("gm x Vf")
+    
+    ax2.set_ylabel("$g_m$ (S)")
+    ax2.set_xlabel("$V_f$ (V)")
+
+    fig2.savefig(path.replace(".csv", " gm.png"))
+
+def PlotVgs(path, sizex=640, draw=False):
+
+    try:
+        df=pd.read_csv(path, header=[0, 1])
+        
+        Id=df['Id'][df['Id'].columns[0]].to_numpy()
+        Vg=df['Vg'][df['Vg'].columns[0]].to_numpy()
+        Vd=float(df.columns[2][1])
+    except:
+        df=pd.read_csv(path)
+        
+        Id=df['Id'].to_numpy()
+        Vg=df['Vg'].to_numpy()
+
+    if np.average(Id) < 0:
+        Vg=-Vg
+        Vd=-Vd
+        Id=-Id
+        ptype=True
+
+    gm=np.diff(Id)/np.diff(Vg)
+    maxgm=np.argmax(gm)
+
+    i=0
+    j=0
+
+    while np.max(np.abs(Id)) < 0.3:
+        i+=1
+        Id=Id*1e3
+
+    while np.max(np.abs(gm)) < 0.3:
+        j+=1
+        gm=gm*1e3
+
+    try:
+        Vgfit=Vg[maxgm-2:maxgm+2]
+        Idfit=Id[maxgm-2:maxgm+2]
+        
+        m, b= np.polyfit(Vgfit, Idfit, 1)
+        LIN=-b/m+Vd/2
+    except Exception as err:
+        print(f">>> Error: {err}")
+        LIN=0
+
+    fig, ax=plt.subplots()
+
+    prefix=['f','p','n','u','m','']
+
+    ax.plot(Vg, Id, 'b', label=f'Vd={int(np.around(Vd*1e3))} mV')
+    ax.set_ylim(bottom=0)
+
+    if LIN != 0:
+        Vgfit=np.linspace(-b/m, Vg[np.argmax(gm)])
+        ax.plot(Vgfit, m*Vgfit+b, 'k', alpha=0.5, label="Vth LinFit")
+
+    ax.set_title("$I_D$ x $V_{GS}$" +f" - $V_D$={Vd} mV")
+    ax.set_xlabel("-$V_{GS}$ (V)" if 'ptype' in locals() else "-$V_{GS}$")
+    ax.set_ylabel(f"-$I_D$ ({prefix[-i]}A)" if 'ptype' in locals() else f"$I_D$ ({prefix[-i]}A)")
+
+    ax2=ax.twinx()
+    ax2.plot(Vg[1:], gm, 'r--', label="$g_m$")
+    ax2.set_ylim(bottom=0)
+
+    ax2.set_ylabel(f"$g_m$ ({prefix[-j]}S)")
+    fig.legend(loc='upper left', bbox_to_anchor=(0.12, 0.89))
+
+    fig.savefig(f"{path.replace('csv', 'png')}")
+
+    return np.around(LIN, 3)
+
+def CalcIsSat(path, T):
+    global e, k
+    n, Ispec= 0, 0
+
+    try:
+        df=pd.read_csv(path, header=[0, 1])
+        
+        Id=df['Id'][df['Id'].columns[0]].to_numpy()
+        Vg=df['Vg'][df['Vg'].columns[0]].to_numpy()
+        Vd=float(df.columns[2][1])
+    except:
+        df=pd.read_csv(path)
+        
+        Id=df['Id'].to_numpy()
+        Vg=df['Vg'].to_numpy()
+    
+    if np.average(Id) < 0:
+        Vd=-Vd
+        Vg=-Vg
+        Id=-Id
+
+    model = SuperSmoother()
+    model.fit(Vg[1:], gm)
+
+    maxgm=np.argmax(model.predict(Vg))
+    gmmax=np.max(model.predict(Vg))
+
+    PlotVgs(path)
+
+    y=Id/(gm*k*T/e)
+    x=Id
+    
+    # print(format(Ispec, '.3e'))
+    n=np.nanmin(y[y>0])
+    # print(format(n, '.3f'))
+
+    fig = plt.figure()
+    ax=plt.gca() 
+    ax.set_yscale('log')
+    ax.set_xscale('log')
+    
+    ax.plot(x, np.array([n for c in x]), '--k')
+    try:
+        m, b = np.polyfit(np.log10(x[-7:]), np.log10(y[-7:]), 1, w=np.sqrt(y[-7:]))
+        
+        Ispec=10**((-b)/m)
+        ax.plot(x, y[-1]/(b * np.power(x[-1], m))*(b * np.power(x, m)), '--r')
+    except Exception as err:
+        print(f">>> Error: {err}")
+    ax.plot(x, y, '.b')
+    
+    ax.set_ylabel('$I_D/(g_m.U_T)$ (log)')
+    ax.set_xlabel('$I_D$ (log)')
+    
+    ax.set_ylim((1, 1.2*y[-1]))
+
+    save_path=f"{path.rsplit('.',1)[0]}.IdGmUt.png"
+    plt.savefig(save_path) 
+    
+    return n, Ispec
+    

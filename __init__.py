@@ -5,7 +5,23 @@ from lmfit.models import Model
 from datetime import datetime
 from supersmoother import SuperSmoother
 from scipy.constants import epsilon_0
+
+import sekve
+
 from sekve.extractor.ss_extractor import extract_ss_cryo
+from sekve.model import sEKVModel
+
+prefix=['f','p','n','u','m','','k','M','G','T','P']
+
+px = 1/plt.rcParams['figure.dpi']
+
+plt.rcParams['font.family'] = ['Times New Roman']
+plt.rcParams['font.size'] = 16 # Default font size for all text
+plt.rcParams['axes.labelsize'] = 12 # Font size for axis labels
+plt.rcParams['xtick.labelsize'] = 10 # Font size for x-axis tick labels
+plt.rcParams['ytick.labelsize'] = 10 # Font size for y-axis tick labels
+plt.rcParams['legend.fontsize'] = 12 # Font size for legend
+plt.rcParams['figure.titlesize'] = 20 # Font size for figure titles
 
 ##### Definições de Modelos
 
@@ -395,11 +411,15 @@ def CalcIsSat(path, T):
         Vg=-Vg
         Id=-Id
 
+    gm=np.diff(Id)/np.diff(Vg)
+
     model = SuperSmoother()
     model.fit(Vg[1:], gm)
 
-    maxgm=np.argmax(model.predict(Vg))
-    gmmax=np.max(model.predict(Vg))
+    smoothgm=model.predict(Vg)
+
+    maxgm=np.argmax(smoothgm)
+    gmmax=np.max(smoothgm)
 
     PlotVgs(path)
 
@@ -434,4 +454,58 @@ def CalcIsSat(path, T):
     plt.savefig(save_path) 
     
     return n, Ispec
+
+def Extract_sEKV(path, W, L, T):
+    ptype=False
+    df=pd.read_csv(path, header=[0, 1])
     
+    Id=df['Id'][df['Id'].columns[0]].to_numpy()
+    Vg=df['Vg'][df['Vg'].columns[0]].to_numpy()
+    Vd=float(df.columns[2][1])
+    
+    
+    if np.average(Id) < 0:
+        ptype=True
+        Vd=-Vd
+        Vg=-Vg
+        Id=-Id
+
+    n, Ispec, lambdac, vt0, fig, ax = Extract_sEKV_values(Vg, Id, Vd, W, L, T, ptype)
+
+    fig.savefig(path.replace(".csv", " - sEKV.png"))
+
+def Extract_sEKV_values(Vg, Id, Vd, W, L, T, ptype):
+    
+    res = sekve.Extractor(vg=Vg,
+                      i=Id,
+                      vd=Vd,
+                      width=W,
+                      length=L,
+                      temp=294,
+                      n_ext_method='ss' if T > 150 else 'ss_general',
+                      no_refine=T<150
+                     )
+    res.run_extraction()
+    p=res.ekv_4params
+    
+    n, Ispec, lambdac, vt0 = p.values()
+
+    fig, ax = plt.subplots()
+
+    ax.plot(Vg, Id*1e3, 'r.', label='Data')
+    ax.plot(sEKVModel.model_ID_vs_VG(Id, n, Ispec, lambdac, vt0, temperature=294), Id*1e3, 'k--', label='sEKV')
+    ax2=plt.twinx(ax)
+
+    ax2.plot(Vg, Id*1e3, 'r.', label='Data')
+    ax2.plot(sEKVModel.model_ID_vs_VG(Id, n, Ispec, lambdac, vt0, temperature=294), Id*1e3, 'k--', label='sEKV')
+
+    ax2.set_yscale('log')
+    
+
+    ax.set_ylabel('$\mathrm{I_{DS}}$ (mA)' if ptype else '$\mathrm{I_{SD}}$ (mA)')
+    ax.set_xlabel('$\mathrm{V_{GS}}$ (V)' if ptype else '$\mathrm{V_{SG}}$ (V)')
+    ax.legend()
+    ax.text(0, 1, "n=%.2f\n$\mathrm{I_{spec}}$=%.2e A\n$\mathrm{\lambda_c}$=%.2e\n$\mathrm{V_{t0}}$=%.2f V\n$\mathrm{|V_{DS}|}$=%.1f V" % (n, Ispec, lambdac, vt0, Vd), horizontalalignment='left',
+     verticalalignment='top')
+
+    return n, Ispec, lambdac, vt0, fig, ax

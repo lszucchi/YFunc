@@ -5,6 +5,9 @@ from lmfit.models import Model
 from datetime import datetime
 from supersmoother import SuperSmoother
 from scipy.constants import epsilon_0
+from sekve.model import sEKVModel
+from scipy.optimize import least_squares
+from scipy.constants import k, e, epsilon_0
 
 import sekve
 
@@ -13,10 +16,12 @@ from sekve.model import sEKVModel
 
 prefix=['f','p','n','u','m','','k','M','G','T','P']
 
+UMC=[(0,0), (240, 180), (3e3, 180), (3e3, 240), (3e3, 300), (3e3, 400), (3e3, 600), (3e3, 1e3), (1e3, 1e3), (500, 1e3), (300, 1e3), (240, 1e3), (10e3, 103)]
+
 px = 1/plt.rcParams['figure.dpi']
 
 plt.rcParams['font.family'] = ['Times New Roman']
-plt.rcParams['font.size'] = 16 # Default font size for all text
+plt.rcParams['font.size'] = 12 # Default font size for all text
 plt.rcParams['axes.labelsize'] = 12 # Font size for axis labels
 plt.rcParams['xtick.labelsize'] = 10 # Font size for x-axis tick labels
 plt.rcParams['ytick.labelsize'] = 10 # Font size for y-axis tick labels
@@ -455,7 +460,7 @@ def CalcIsSat(path, T):
     
     return n, Ispec
 
-def Extract_sEKV(path, W, L, T):
+def Extract_sEKV(path, W, L, T, dut=None):
     ptype=False
     df=pd.read_csv(path, header=[0, 1])
     
@@ -470,42 +475,74 @@ def Extract_sEKV(path, W, L, T):
         Vg=-Vg
         Id=-Id
 
-    n, Ispec, lambdac, vt0, fig, ax = Extract_sEKV_values(Vg, Id, Vd, W, L, T, ptype)
+    n, Ispec, lambdac, vt0, fig, ax = Extract_sEKV_values(Vg, Id, Vd, W, L, T, ptype, dut)
+    path=path.rsplit('/', 2)
+    path=f"{path[0]}/{path[1]} - {T} - sEKV.png"
+    fig.savefig(path)
 
-    fig.savefig(path.replace(".csv", " - sEKV.png"))
+    return n, Ispec, lambdac, vt0
 
-def Extract_sEKV_values(Vg, Id, Vd, W, L, T, ptype):
-    
+def ModelVg(Id, x, T, vs=0):
+        n, ispec, lc, vt=x
+        ic=Id/ispec
+        qs = (np.sqrt(4 * ic + (1 + (lc * ic)) ** 2) - 1) / 2.0
+        ut = k*T/e
+        vp = vs + ut * (2 * qs + np.log(qs))
+        vg = n * vp + vt
+        return vg
+
+def CostVg(x, I, V, T, weight, vs=0):
+        return weight*(V-ModelVg(I, x, T, vs))
+
+def Extract_sEKV_values(Vg, Id, Vd, W, L, T, ptype, dut=None, last_refine=False):
+
     res = sekve.Extractor(vg=Vg,
                       i=Id,
                       vd=Vd,
                       width=W,
                       length=L,
-                      temp=294,
+                      temp=T,
                       n_ext_method='ss' if T > 150 else 'ss_general',
                       no_refine=T<150
                      )
     res.run_extraction()
-    p=res.ekv_4params
     
-    n, Ispec, lambdac, vt0 = p.values()
+    n, Ispec, lambdac, vt0 = list(res.ekv_4params.values())
+    print(n, Ispec, lambdac, vt0)
+
+    x0_bounds = (1, np.inf)
+    x1_bounds = (0, np.inf)
+    x2_bounds = (0, 1)
+    x3_bounds = (0, np.inf)
+    # bounds = np.transpose([x0_bounds, x1_bounds, x2_bounds])
+    bounds = np.transpose([x0_bounds, x1_bounds, x2_bounds, x3_bounds])
+    if last_refine:
+        # Fit model to data
+        refine = least_squares(CostVg, [n, Ispec, lambdac, vt0], bounds=bounds, kwargs={"I":res.ID, "V": res.VG, "weight":1, "T":T}, xtol=1e-12, ftol=1e-12, gtol=1e-15)
+
+        n, Ispec, lambdac, vt0 = refine.x
+        print(n, Ispec, lambdac, vt0)
 
     fig, ax = plt.subplots()
 
-    ax.plot(Vg, Id*1e3, 'r.', label='Data')
-    ax.plot(sEKVModel.model_ID_vs_VG(Id, n, Ispec, lambdac, vt0, temperature=294), Id*1e3, 'k--', label='sEKV')
+    ax.plot(res.VG, res.ID*1e3, 'ro', label='Data')
+    ax.plot(ModelVg(res.ID, [n, Ispec, lambdac, vt0], T), res.ID*1e3, 'k--', label='sEKV')
     ax2=plt.twinx(ax)
 
-    ax2.plot(Vg, Id*1e3, 'r.', label='Data')
-    ax2.plot(sEKVModel.model_ID_vs_VG(Id, n, Ispec, lambdac, vt0, temperature=294), Id*1e3, 'k--', label='sEKV')
+    ax2.plot(res.VG, res.ID*1e3, 'r^', label='Data')
+    ax2.plot(ModelVg(res.ID, [n, Ispec, lambdac, vt0], T), res.ID*1e3, 'k--', label='sEKV')
+    ax.set_yscale('log')
 
-    ax2.set_yscale('log')
-    
-
-    ax.set_ylabel('$\mathrm{I_{DS}}$ (mA)' if ptype else '$\mathrm{I_{SD}}$ (mA)')
-    ax.set_xlabel('$\mathrm{V_{GS}}$ (V)' if ptype else '$\mathrm{V_{SG}}$ (V)')
+    ax.set_ylabel('$\mathrm{I_{DS}}$ (mA)' if not ptype else '$\mathrm{I_{SD}}$ (mA)')
+    ax.set_xlabel('$\mathrm{V_{GS}}$ (V)' if not ptype else '$\mathrm{V_{SG}}$ (V)')
     ax.legend()
-    ax.text(0, 1, "n=%.2f\n$\mathrm{I_{spec}}$=%.2e A\n$\mathrm{\lambda_c}$=%.2e\n$\mathrm{V_{t0}}$=%.2f V\n$\mathrm{|V_{DS}|}$=%.1f V" % (n, Ispec, lambdac, vt0, Vd), horizontalalignment='left',
+
+    if dut is not None:
+        dut=dut+' '
+
+    ax.set_title('%s$\mathrm{|I_{DS}|}$ x $\mathrm{|V_{GS}|}$ T=%07.3f K' % (dut, T))
+
+    ax.text(np.min(res.VG), np.max(res.ID*1e3), "n=%.2f\n$\mathrm{I_{spec}}$=%.2e A\n$\mathrm{\lambda_c}$=%.2e\n$\mathrm{V_{t0}}$=%.2f V\n$\mathrm{|V_{DS}|}$=%.1f V" % (n, Ispec, lambdac, vt0, Vd), horizontalalignment='left',
      verticalalignment='top')
 
     return n, Ispec, lambdac, vt0, fig, ax

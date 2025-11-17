@@ -44,6 +44,90 @@ def Id_Model(Vg, Vth, Vd, beta, theta1, theta2):
     VGt=Vg-Vth-Vd/2
     return (beta*Vd*VGt)/(1+theta1*VGt+theta2*(VGt**2))
 
+def GetValueErr(df, key, index, freq):
+    series=[df.loc[[freq*index+n]][key] for n in range(freq)]
+    value=np.average(series)
+    err=np.std(series)/np.sqrt(freq)
+
+    return value, err
+
+def DiodeVf(If, x, T):
+    n, I0, Rs=x
+    Ut=k*T/e
+    return n*Ut*np.log(If/I0)+Rs*If
+
+def CostDVf(x, I, V, T, weight):
+    return weight*(DiodeVf(I, x, T)-V)
+
+def jacDVf(x, I, V, T, weight):
+    n, I0, Rs=x
+    Ut=k*T/e
+    jac_x0=Ut*np.log(I/I0)
+    jac_x1=[-n*Ut/I0 for x in I]
+    jac_x2=I
+    return np.transpose(weight*[jac_x0, jac_x1, jac_x2])
+
+def PlotDiode4P(path, T_in):
+    df = pd.read_csv(path, header=[0, 1])
+
+    if 'If' in df.columns:
+        V=df['Vf'][df['Vf'].columns[0]].to_numpy()
+        I=df['If'][df['If'].columns[0]].to_numpy()
+    else:
+        V=df['Vf'][df['Vf'].columns[0]].to_numpy()
+        I=df['Id'][df['Id'].columns[0]].to_numpy()
+        V=V[I<499e-6]
+        I=I[I<499e-6]
+
+    V_fit = V[np.where(I>2e-8)]
+    I_fit = I[np.where(I>2e-8)]
+
+    p=np.polyfit(np.log(I_fit), V_fit, 1)
+    
+    x0 = [np.exp(p[0]), np.exp(-p[1]/p[0]), 0]
+    print(x0)
+    
+    x0_bounds = (1, np.inf)
+    x1_bounds = (0, 1)
+    x2_bounds = (0, np.inf)  # +/- np.inf can be used instead of None
+    bounds = np.transpose([x0_bounds, x1_bounds, x2_bounds])
+    
+    # Fit model to data
+    res = least_squares(CostDVf, x0, jac=jacDVf, bounds=bounds, kwargs={"I":I_fit, "V": V_fit, "T": T_in, "weight":V_fit}, ftol=1e-12, gtol=1e-15)
+    
+    # print(res.x)
+    n, I0, Rs = res.x
+    
+    fig , ax = plt.subplots()
+    ax.plot(V, I*1e3, '.r')
+    
+    ax2=plt.twinx(ax)
+    ax2.plot(V, I*1e3, 'xb')
+    ax.set_yscale('log')
+    
+    ax.plot(DiodeVf(I_fit, res.x, T_in), I_fit*1e3,"k--",label = "fit")
+    ax2.plot(DiodeVf(I_fit, res.x, T_in), I_fit*1e3,"k--")
+    ax.set_xlim((.4,None))
+    ax.set_ylim((1e-6,None))
+    ax.legend()
+    
+    ax.set_ylabel("$I_f$ (mA)")
+    ax.set_xlabel("$V_f$ (V)")
+    
+    ax.set_title("Diode IxV %07.3f K" % T_in)
+    ax.text(0.45,1e-3, " n = %.2f\n $I_0$ = %.2e A\n $R_s$ = %.1f $\mathrm{\Omega}$" %(n,I0,Rs))
+    
+    fig.savefig(path.replace('.csv', '.png'))
+
+    idx=np.abs(I - 10e-6).argmin()
+    v10u = np.polyval(np.polyfit(I[idx-1:idx+2], V[idx-1:idx+2], 1), 10e-6)
+    idx=np.abs(I - 1e-6).argmin()
+    v1u = np.polyval(np.polyfit(I[idx-1:idx+2], V[idx-1:idx+2], 1), 1e-6)
+
+    plt.close(fig)
+
+    return n, I0, Rs, v10u, v1u
+
 def YFuncExtraction(path, temp, WL, t_ox, e_ox, Vd=None, nfins=1, VgName='Vg', IdName='Id', PlotIdxVgs=True, SaveIntermediary=False, SaveRs=False, SaveFinal=True, Interpolate=True):
     LIN, Vth, SS, migm, miyf, theta1, theta2, Rext1, Rext2, errmax = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] 
 
@@ -325,6 +409,22 @@ def DiodeExtraction(path, temp, VfName="Vf", IfName="If"):
 
     fig2.savefig(path.replace(".csv", " gm.png"))
 
+def PlotVds(path, sizex=640, draw=False):
+
+    df=pd.read_csv(path, header=[0, 1])
+
+    fig, ax = plt.subplots()
+    
+    ax.plot(df.Vd.values, df.Id.values*1e3)
+    ax.legend(['%.2f' % float(x) for x in df.Id.columns], title="$\mathrm{V_{GS}}$")
+
+    ax.set_title("$I_D$ x $V_{DS}$")
+    ax.set_xlabel("$V_{DS}$ (V)")
+    ax.set_ylabel("$I_D$ (mA)")
+    fig.tight_layout()
+
+    fig.savefig(path.replace("csv", "png"))
+
 def PlotVgs(path, sizex=640, draw=False):
 
     try:
@@ -460,7 +560,7 @@ def CalcIsSat(path, T):
     
     return n, Ispec
 
-def Extract_sEKV(path, W, L, T, dut=None):
+def Extract_sEKV(path, W, L, T, dut=None, last_refine=False):
     ptype=False
     df=pd.read_csv(path, header=[0, 1])
     
@@ -475,7 +575,7 @@ def Extract_sEKV(path, W, L, T, dut=None):
         Vg=-Vg
         Id=-Id
 
-    n, Ispec, lambdac, vt0, fig, ax = Extract_sEKV_values(Vg, Id, Vd, W, L, T, ptype, dut)
+    n, Ispec, lambdac, vt0, fig, ax = Extract_sEKV_values(Vg, Id, Vd, W, L, T, ptype, dut, last_refine)
     path=path.rsplit('/', 2)
     path=f"{path[0]}/{path[1]} - {T} - sEKV.png"
     fig.savefig(path)
@@ -518,7 +618,7 @@ def Extract_sEKV_values(Vg, Id, Vd, W, L, T, ptype, dut=None, last_refine=False)
     bounds = np.transpose([x0_bounds, x1_bounds, x2_bounds, x3_bounds])
     if last_refine:
         # Fit model to data
-        refine = least_squares(CostVg, [n, Ispec, lambdac, vt0], bounds=bounds, kwargs={"I":res.ID, "V": res.VG, "weight":1, "T":T}, xtol=1e-12, ftol=1e-12, gtol=1e-15)
+        refine = least_squares(CostVg, [n, Ispec, 0.5, vt0], bounds=bounds, kwargs={"I":res.ID, "V": res.VG, "weight":1, "T":T}, xtol=1e-12, ftol=1e-12, gtol=1e-15)
 
         n, Ispec, lambdac, vt0 = refine.x
         print(n, Ispec, lambdac, vt0)
@@ -540,9 +640,9 @@ def Extract_sEKV_values(Vg, Id, Vd, W, L, T, ptype, dut=None, last_refine=False)
     if dut is not None:
         dut=dut+' '
 
-    ax.set_title('%s$\mathrm{|I_{DS}|}$ x $\mathrm{|V_{GS}|}$ T=%07.3f K' % (dut, T))
+    ax.set_title('%s$\mathrm{|I_{DS}|}$ x $\mathrm{|V_{GS}|}$ T=%.1f K $\mathrm{|V_{DS}|}$=%.1f V' % (dut, T, Vd))
 
-    ax.text(np.min(res.VG), np.max(res.ID*1e3), "n=%.2f\n$\mathrm{I_{spec}}$=%.2e A\n$\mathrm{\lambda_c}$=%.2e\n$\mathrm{V_{t0}}$=%.2f V\n$\mathrm{|V_{DS}|}$=%.1f V" % (n, Ispec, lambdac, vt0, Vd), horizontalalignment='left',
+    ax.text(np.min(res.VG), np.max(res.ID*1e3), "n=%.2f\n$\mathrm{I_{spec}}$=%.2e A\n$\mathrm{\lambda_c}$=%.2f\n$\mathrm{V_{t0}}$=%.2f V\n" % (n, Ispec, lambdac, vt0), horizontalalignment='left',
      verticalalignment='top')
 
     return n, Ispec, lambdac, vt0, fig, ax

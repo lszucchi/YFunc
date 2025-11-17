@@ -1,3 +1,9 @@
+*.png
+*.psd
+*.ipynb
+umc180*
+sky130*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

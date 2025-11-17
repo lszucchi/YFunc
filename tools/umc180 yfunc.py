@@ -1,8 +1,6 @@
 from os import listdir, walk, rename
 from os.path import isfile
-from YFunc import YFuncExtraction, DiodeExtraction, GUI
-from HPIB.HPT import Plot2P
-from HPIB.DevParams import UMC
+from YFunc import YFuncExtraction, PlotDiode4P
 from datetime import datetime
 from tkinter import filedialog
 import pandas as pd
@@ -40,11 +38,19 @@ for root, dirs, files in walk(path, topdown=False):
                     print(f"{format(temp, '7.3f')},{format(LIN, '1.3f')},{format(Vth, '1.3f')},{format(SS1,'6.2f')},{format(SS2,'6.2f')},{format(migm, '.4e')},{format(miyf, '.4e')},{format(theta1, '+.3e')},{format(theta2, '+.3e')},{format(Rext1, '.3e')},{format(Rext2, '.3e')},{format(beta, '.3e')},{format(errmax, '.3e')}")
                     with open(f"{root}/Parameters {now}.log", 'a') as myfile:
                         myfile.write(f"{format(temp, '7.3f')},{format(LIN, '1.3f')},{format(Vth, '1.3f')},{format(SS1,'6.2f')},{format(SS2,'6.2f')},{format(migm, '.4e')},{format(miyf, '.4e')},{format(theta1, '+.3e')},{format(theta2, '+.3e')},{format(Rext1, '.3e')},{format(Rext2, '.3e')},{format(beta, '.3e')},{format(errmax, '.3e')}\n")
+            
             if 'd' in prefix.lower():
                 temp=float(temp.rsplit(' K')[0])
-    ##                    rename(f"{root}/{file}", f"{root}/Diode - {format(temp, '07.3f')} K - 2509.csv")
-                DiodeExtraction(f"{root}/{file}", temp)
-                plt.close('all')
+
+                if not isfile(f"{root}/Parameters {now}.log"):
+                    with open(f"{root}/Parameters {now}.log", 'w') as myfile:
+                        myfile.write('temp,n,I0,Rs,v10u,v1u\n')
+
+                n, I0, Rs, v10u, v1u = PlotDiode4P(f"{root}/{file}", temp)     
+
+                with open(f"{root}/Parameters {now}.log", 'a') as myfile:
+                    print('%.1f,%.1f,%.2e,%.2f,%.3f,%.3f' % (temp, n, I0, Rs, v10u, v1u))
+                    myfile.write('%.1f,%.1f,%.2e,%.2f,%.3f,%.3f\n' % (temp, n, I0, Rs, v10u, v1u))
         
             if '4P' in file or '2P' in file:
                 Res=Plot2P(f"{root}/{prefix}/{file}")
